@@ -2,8 +2,9 @@ import * as vscode from 'vscode';
 import { ChatBlock, BlockType, BlockState } from '../types';
 
 export class ChatParser {
-    private static readonly BLOCK_REGEX = /<([SUA])\s+([AI])\s+id="([^"]+)"(?:\s+name="([^"]+)")?\s*>(.*?)<\/\1>/gs;
+    private static readonly BLOCK_REGEX = /<([SUAN])\s+([AI])\s+id="([^"]+)"(?:\s+name="([^"]+)")?(?:\s+model="([^"]+)")?\s*>(.*?)<\/\1>/gs;
     private static readonly MARKDOWN_HEADING_REGEX = /^(#{1,6})\s+(.+)$/gm;
+    private static readonly THINK_TAG_REGEX = /<think>([\s\S]*?)<\/think>/g;
 
     public static parseDocument(document: vscode.TextDocument): ChatBlock[] {
         const text = document.getText();
@@ -11,7 +12,7 @@ export class ChatParser {
         let match;
 
         while ((match = this.BLOCK_REGEX.exec(text)) !== null) {
-            const [fullMatch, type, state, id, name, content] = match;
+            const [fullMatch, type, state, id, name, modelAlias, content] = match;
             const startPos = document.positionAt(match.index);
             const endPos = document.positionAt(match.index + fullMatch.length);
 
@@ -20,6 +21,7 @@ export class ChatParser {
                 state: state as BlockState,
                 id,
                 name: name || undefined,
+                modelAlias: modelAlias || undefined,
                 content: content.trim(),
                 range: new vscode.Range(startPos, endPos)
             });
@@ -50,6 +52,54 @@ export class ChatParser {
 
     public static serializeBlock(block: ChatBlock): string {
         const nameAttr = block.name ? ` name="${block.name}"` : '';
-        return `<${block.type} ${block.state} id="${block.id}"${nameAttr}>${block.content}</${block.type}>`;
+        const modelAttr = block.modelAlias ? ` model="${block.modelAlias}"` : '';
+        return `<${block.type} ${block.state} id="${block.id}"${nameAttr}${modelAttr}>${block.content}</${block.type}>`;
+    }
+
+    /**
+     * 从响应内容中提取思维链
+     * 优先检查独立字段 message.reasoning_content，其次检查 content 内的 <think> 标签。
+     * @param response LLM响应内容或响应对象
+     * @param provider 可选的provider配置 (目前主要用于日志记录)
+     */
+    static extractThinkingContent(response: string | any, provider?: any): { mainContent: string; thinkingContent: string | undefined } {
+        console.log('Extracting thinking content from response:', response);
+        console.log('Provider config:', provider);
+
+        if (typeof response !== 'object' || !response.choices || response.choices.length === 0 || !response.choices[0].message) {
+            console.warn('Invalid response format for thinking content extraction.');
+            const content = typeof response === 'string' ? response : (response?.content || '');
+            return {
+                mainContent: content,
+                thinkingContent: undefined
+            };
+        }
+
+        const message = response.choices[0].message;
+        let mainContent = message.content || ''; // 初始主内容
+        let thinkingContent: string | undefined = undefined;
+
+        // 优先检查独立字段 (如 DeepSeek 的 reasoning_content)
+        if (message.reasoning_content) {
+            thinkingContent = message.reasoning_content;
+            console.log('Found thinking content in field `reasoning_content`:', thinkingContent);
+            // 注意：此时 mainContent 仍然是原始的 message.content
+        } else {
+            // 如果没有独立字段，再检查标签格式
+            const thinkRegex = /<think>([\s\S]*?)<\/think>/;
+            const match = mainContent.match(thinkRegex);
+            if (match) {
+                thinkingContent = match[1].trim();
+                // 如果找到标签，需要从 mainContent 中移除标签
+                mainContent = mainContent.replace(thinkRegex, '').trim();
+                console.log('Found thinking content in <think> tags:', thinkingContent);
+            }
+        }
+
+        console.log('Final extracted content - Main:', mainContent, 'Thinking:', thinkingContent);
+        return {
+            mainContent,
+            thinkingContent
+        };
     }
 } 

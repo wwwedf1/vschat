@@ -10,14 +10,15 @@
   "repository": {
     "block": {
       "name": "meta.block.chat",
-      "begin": "(<([SUA])\\s+([AI])\\s+id=\"([^\"]+)\"(?:\\s+name=\"([^\"]+)\")?\\s*>)",
+      "begin": "(<([SUAN])\\s+([AI])\\s+id=\"([^\"]+)\"(?:\\s+name=\"([^\"]+)\")?(?:\\s+model=\"([^\"]+)\")?\\s*>)",
       "beginCaptures": {
         "1": { "name": "meta.tag.block.chat" },
         "2": { "name": "entity.name.tag.chat" },
         "3": { "name": "entity.other.attribute-name.state.chat" },
         "4": { "name": "string.quoted.double.id.chat" },
         "5": { "name": "string.quoted.double.name.chat" },
-        "6": { "name": "punctuation.definition.tag.end.chat" }
+        "6": { "name": "string.quoted.double.model.chat" },
+        "7": { "name": "punctuation.definition.tag.end.chat" }
       },
       "end": "(</\\2>)",
       "endCaptures": {
@@ -29,8 +30,8 @@
       "patterns": [
         {
           "contentName": "text.markdown",
-          "begin": "(?!</[SUA]>)",
-          "end": "(?=</[SUA]>)",
+          "begin": "(?!</[SUAN]>)",
+          "end": "(?=</[SUAN]>)",
           "patterns": [
             { "include": "text.html.markdown" }
           ]

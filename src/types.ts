@@ -1,6 +1,6 @@
 import * as vscode from 'vscode';
 
-export type BlockType = 'S' | 'U' | 'A' | 'Tool';
+export type BlockType = 'S' | 'U' | 'A' | 'N' | 'Tool';
 export type BlockState = 'A' | 'I';
 
 export interface ChatBlock {
@@ -12,6 +12,7 @@ export interface ChatBlock {
     range: vscode.Range;
     toolCallId?: string;
     toolName?: string;
+    modelAlias?: string;
 }
 
 export interface APIConfig {
@@ -22,16 +23,12 @@ export interface APIConfig {
 }
 
 export interface EditorConfig {
-    folding: {
-        enabled: boolean;
-        includeMarkdownHeadings: boolean;
-    };
-    highlightActiveState: {
-        enabled: boolean;
-    };
+    // Remove hideTags configuration
+    /*
     hideTags: {
         enabled: boolean;
     };
+    */
 }
 
 export interface ExtensionConfig {

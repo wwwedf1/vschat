@@ -1,5 +1,31 @@
 import * as vscode from 'vscode';
-import { LLMProvider, LLMModel, LLMRequest, LLMResponse, OpenAIResponse } from '../types';
+import { LLMProvider, LLMModel, LLMRequest } from '../types';
+
+interface LLMResponse {
+    content: string;
+    error?: string;
+    rawResponse?: any;
+    provider?: LLMProvider;
+}
+
+interface APIResponse {
+    choices: Array<{
+        message: {
+            content: string;
+            role?: string;
+        };
+        index?: number;
+        finish_reason?: string;
+    }>;
+    id?: string;
+    model?: string;
+    created?: number;
+    usage?: {
+        prompt_tokens?: number;
+        completion_tokens?: number;
+        total_tokens?: number;
+    };
+}
 
 export class LLMService {
     private providers: Map<string, LLMProvider> = new Map();
@@ -120,54 +146,65 @@ export class LLMService {
     }
 
     public async sendRequest(request: LLMRequest): Promise<LLMResponse> {
-        const model = this.models.get(request.modelId);
-        if (!model) {
-            throw new Error(`Model ${request.modelId} not found`);
-        }
-
-        const provider = this.providers.get(model.providerId);
-        if (!provider) {
-            throw new Error(`Provider ${model.providerId} not found`);
-        }
-
-        // 获取 API Key
-        const apiKey = await this.getProviderApiKey(model.providerId);
-        if (!apiKey) {
-            throw new Error(`API Key not found for provider ${model.providerId}`);
-        }
-
         try {
+            const model = this.getCurrentModel();
+            if (!model) {
+                return {
+                    content: '',
+                    error: '未选择模型'
+                };
+            }
+
+            const provider = this.getProviderById(model.providerId);
+            if (!provider) {
+                return {
+                    content: '',
+                    error: `Provider ${model.providerId} not found`
+                };
+            }
+
+            const apiKey = await this.getProviderApiKey(provider.id);
+            if (!apiKey) {
+                return {
+                    content: '',
+                    error: `Provider ${provider.id} API Key not found`
+                };
+            }
+
+            const requestBody = {
+                model: model.name,
+                messages: request.messages,
+                ...request.parameters
+            };
+
+            console.log('Sending request to provider:', provider.id);
             const response = await fetch(provider.url, {
                 method: 'POST',
                 headers: {
                     'Content-Type': 'application/json',
                     'Authorization': `Bearer ${apiKey}`
                 },
-                body: JSON.stringify({
-                    model: model.name,
-                    messages: request.messages,
-                    ...request.parameters
-                })
+                body: JSON.stringify(requestBody)
             });
 
             if (!response.ok) {
-                const errorText = await response.text();
-                throw new Error(`HTTP error! status: ${response.status}\n${errorText}`);
+                throw new Error(`HTTP error! status: ${response.status}`);
             }
 
-            const data = await response.json() as OpenAIResponse;
+            const data = await response.json() as APIResponse;
+            console.log('Received API response:', data);
+            
+            // 确保返回完整的响应对象和provider配置
             return {
-                content: data.choices?.[0]?.message?.content || '',
-                usage: data.usage ? {
-                    promptTokens: data.usage.prompt_tokens,
-                    completionTokens: data.usage.completion_tokens,
-                    totalTokens: data.usage.total_tokens
-                } : undefined
+                content: data.choices[0].message.content,
+                rawResponse: data,
+                provider: provider
             };
         } catch (error) {
+            console.error('Error in sendRequest:', error);
             return {
                 content: '',
-                error: error instanceof Error ? error.message : 'Unknown error'
+                error: error instanceof Error ? error.message : String(error)
             };
         }
     }
@@ -189,6 +226,10 @@ export class LLMService {
 
     public getProviders(): LLMProvider[] {
         return Array.from(this.providers.values());
+    }
+
+    private getProviderById(id: string): LLMProvider | undefined {
+        return this.providers.get(id);
     }
 
     public dispose() {

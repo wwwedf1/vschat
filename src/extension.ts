@@ -8,7 +8,7 @@ import { EditorEnhancement } from './editor/editorEnhancement';
 import { ConfigManager } from './config/configManager';
 import { LLMService } from './llm/service';
 import { LLMStatusBar } from './llm/statusBar';
-import { LLMRequest, LLMProvider, LLMModel, LLMVerificationResponse } from './types';
+import { LLMRequest, LLMProvider, LLMModel, LLMVerificationResponse, BlockState, ChatBlock } from './types';
 
 let editorEnhancement: EditorEnhancement | undefined;
 let stateManager: StateManager | undefined;
@@ -62,22 +62,54 @@ export function activate(context: vscode.ExtensionContext) {
 			const editor = vscode.window.activeTextEditor;
 			if (editor && isChatDocument(editor.document) && stateManager) {
 				const position = editor.selection.active;
+				// **重要**: 重新解析文档获取最新的块状态
 				const blocks = ChatParser.parseDocument(editor.document);
 				const currentBlock = blocks.find(block => block.range.contains(position));
 
 				if (currentBlock) {
-					const currentState = stateManager.getBlockState(currentBlock.id) ?? 'I';
-					const newState = currentState === 'A' ? 'I' : 'A';
+					// **重要**: 使用从文档解析出的当前状态
+					const currentState: BlockState = currentBlock.state;
+					const newState: BlockState = currentState === 'A' ? 'I' : 'A';
+					
+					// 更新内存状态（虽然 updateDocument 会覆盖，但保持一致性）
 					stateManager.setBlockState(currentBlock.id, newState);
-					await stateManager.updateDocument();
-					if (editorEnhancement) {
-						editorEnhancement.updateDecorations(editor);
+
+					// 使用新状态直接构建编辑操作
+					const newBlock: ChatBlock = { ...currentBlock, state: newState };
+					const edit = new vscode.WorkspaceEdit();
+					edit.replace(editor.document.uri, currentBlock.range, ChatParser.serializeBlock(newBlock));
+					
+					const success = await vscode.workspace.applyEdit(edit);
+					if (success) {
+						// 成功后，确保 StateManager 与文件同步
+						stateManager.reloadStateFromDocument();
+						// 更新装饰器
+						if (editorEnhancement) {
+							editorEnhancement.updateDecorations(editor);
+						}
+					} else {
+						vscode.window.showErrorMessage('切换状态失败。');
 					}
 				} else {
 					 vscode.window.showInformationMessage('光标不在任何聊天块内。');
 				}
 			} else {
 				 vscode.window.showWarningMessage('请先打开一个 .chat 文件。');
+			}
+		})
+	);
+
+	// 监听文档保存事件
+	context.subscriptions.push(
+		vscode.workspace.onDidSaveTextDocument(document => {
+			if (isChatDocument(document) && stateManager && stateManager.getDocumentUri().toString() === document.uri.toString()) {
+				console.log(`Document saved, reloading state for: ${document.uri.toString()}`);
+				stateManager.reloadStateFromDocument();
+				// 如果编辑器处于活动状态，更新装饰器
+				const editor = vscode.window.activeTextEditor;
+				if (editor && editor.document === document && editorEnhancement) {
+					editorEnhancement.updateDecorations(editor);
+				}
 			}
 		})
 	);
@@ -93,9 +125,16 @@ export function activate(context: vscode.ExtensionContext) {
 	context.subscriptions.push(
 		vscode.commands.registerCommand('vschat.popState', async () => {
 			if (stateManager) {
+				const editor = vscode.window.activeTextEditor;
 				if (stateManager.popState()) {
-					await stateManager.updateDocument();
-					// updateDecorations();
+					console.log('State popped. Updating decorations.');
+					// 只更新内存状态，并触发装饰器更新，不直接修改文件
+					if (editor && editor.document.uri.toString() === stateManager.getDocumentUri().toString() && editorEnhancement) {
+						editorEnhancement.updateDecorations(editor);
+					}
+					vscode.window.showInformationMessage('已撤销上一步状态更改。');
+				} else {
+					vscode.window.showWarningMessage('没有可撤销的状态。');
 				}
 			}
 		})
@@ -114,28 +153,105 @@ export function activate(context: vscode.ExtensionContext) {
 	);
 
 	context.subscriptions.push(
+		vscode.commands.registerCommand('vschat.insertNoteBlock', async () => {
+			const editor = vscode.window.activeTextEditor;
+			if (editor && isChatDocument(editor.document)) {
+				const name = await vscode.window.showInputBox({
+					prompt: '输入注释块标题（可选，用于在大纲视图中显示）',
+					placeHolder: '注释'
+				});
+				
+				// 如果用户提供了名称，创建带名称的注释块，否则创建无名称的注释块
+				const newBlock = ContextBuilder.createNewBlock('N', '', name || undefined);
+				await editor.edit(editBuilder => {
+					editBuilder.insert(editor.selection.active, newBlock);
+				});
+			}
+		})
+	);
+
+	context.subscriptions.push(
+		vscode.commands.registerCommand('vschat.setNoteTitle', async () => {
+			const editor = vscode.window.activeTextEditor;
+			if (!editor || !isChatDocument(editor.document)) {
+				vscode.window.showWarningMessage('请先打开一个 .chat 文件。');
+				return;
+			}
+
+			const blocks = ChatParser.parseDocument(editor.document);
+			const position = editor.selection.active;
+			const currentBlock = blocks.find(block => block.range.contains(position));
+
+			if (!currentBlock) {
+				vscode.window.showWarningMessage('光标不在任何聊天块内。');
+				return;
+			}
+			
+			if (currentBlock.type !== 'N') {
+				vscode.window.showWarningMessage('当前块不是注释块，无法设置标题。');
+				return;
+			}
+
+			const title = await vscode.window.showInputBox({
+				prompt: '输入注释标题',
+				placeHolder: '标题',
+				value: currentBlock.name
+			});
+
+			if (title === undefined) {
+				return; // 用户取消了操作
+			}
+
+			// 只更新块的名称属性，不修改内容
+			const newBlock = { 
+				...currentBlock, 
+				name: title
+			};
+			
+			const edit = new vscode.WorkspaceEdit();
+			edit.replace(editor.document.uri, currentBlock.range, ChatParser.serializeBlock(newBlock));
+			await vscode.workspace.applyEdit(edit);
+
+			// 显示通知
+			vscode.window.showInformationMessage(`已设置注释块标题: "${title}"`);
+		})
+	);
+
+	context.subscriptions.push(
 		vscode.commands.registerCommand('vschat.renameBlock', async () => {
 			const editor = vscode.window.activeTextEditor;
 			if (!editor || !isChatDocument(editor.document)) {
+				vscode.window.showWarningMessage('请先打开一个 .chat 文件。');
 				return;
 			}
 
 			const blocks = ChatParser.parseDocument(editor.document);
 			const block = blocks.find(b => b.range.contains(editor.selection.active));
 			if (!block) {
+				vscode.window.showWarningMessage('光标不在任何聊天块内。');
 				return;
 			}
 
 			const name = await vscode.window.showInputBox({
-				prompt: '输入新的块名称',
+				prompt: '输入块标题（用于在大纲视图中显示）',
+				placeHolder: '标题',
 				value: block.name
 			});
 
-			if (name !== undefined) {
-				const newBlock = { ...block, name };
-				const workspaceEdit = new vscode.WorkspaceEdit();
-				workspaceEdit.replace(editor.document.uri, block.range, ChatParser.serializeBlock(newBlock));
-				await vscode.workspace.applyEdit(workspaceEdit);
+			if (name === undefined) {
+				return; // 用户取消了操作
+			}
+
+			const newBlock = { ...block, name: name || undefined };
+			const workspaceEdit = new vscode.WorkspaceEdit();
+			workspaceEdit.replace(editor.document.uri, block.range, ChatParser.serializeBlock(newBlock));
+			await vscode.workspace.applyEdit(workspaceEdit);
+			
+			// 显示通知
+			if (name) {
+				vscode.window.showInformationMessage(`已设置块标题: "${name}"`);
+			} else {
+				vscode.window.showInformationMessage('已移除块标题');
 			}
 		})
 	);
@@ -178,7 +294,7 @@ export function activate(context: vscode.ExtensionContext) {
 			const activeBlocks = allBlocks.filter(block => stateManager?.getBlockState(block.id) === 'A');
 
 			if (activeBlocks.length === 0) {
-				vscode.window.showInformationMessage('没有激活的聊天块用于发送请求。');
+				vscode.window.showWarningMessage('请至少激活一个聊天块。');
 				return;
 			}
 
@@ -238,16 +354,10 @@ export function activate(context: vscode.ExtensionContext) {
 				vscode.window.withProgress({
 					location: vscode.ProgressLocation.Notification,
 					title: `正在向 ${currentModel.alias || currentModel.name} 发送请求...`,
-					cancellable: true // 允许取消
+					cancellable: true
 				}, async (progress, token) => {
-
-					// 监听取消事件 (如果需要)
-					// token.onCancellationRequested(() => {
-					//     console.log("User cancelled the long running operation");
-					//     // 需要一种方式来取消 fetch 请求，例如使用 AbortController
-					// });
-
 					const response = await llmService.sendRequest(request);
+					console.log('Received response from LLMService:', response);
 
 					if (token.isCancellationRequested) {
 						return;
@@ -256,33 +366,80 @@ export function activate(context: vscode.ExtensionContext) {
 					if (response.error) {
 						vscode.window.showErrorMessage(`请求失败: ${response.error}`);
 					} else {
-						// 4. 将响应追加到文档末尾
-						const assistantBlockText = ContextBuilder.createNewBlock('A', response.content);
-						const newUserBlockText = ContextBuilder.createNewBlock('U', '');
-
-						const edit = new vscode.WorkspaceEdit();
-						const lastLine = document.lineAt(document.lineCount - 1);
-						const endPosition = new vscode.Position(document.lineCount, 0);
+						// 4. 处理响应内容，提取思维链
+						const { mainContent, thinkingContent } = ChatParser.extractThinkingContent(
+							response.rawResponse,
+							response.provider
+						);
+						console.log('Extracted content - Main:', mainContent, 'Thinking:', thinkingContent);
 						
+						let insertText = '';
+						const lastLine = document.lineAt(document.lineCount - 1);
 						const separator = (document.lineCount > 0 && lastLine.text.trim() !== '') ? '\n\n' : '';
-						const insertText = separator + assistantBlockText + '\n\n' + newUserBlockText;
 
+						// 如果存在思维链内容，创建思维链块
+						if (thinkingContent) {
+							console.log('Creating thinking block with content:', thinkingContent);
+							const thinkingBlockText = ContextBuilder.createThinkingBlock(thinkingContent);
+							// 创建主要响应块
+							const assistantBlockText = ContextBuilder.createNewBlock(
+								'A', 
+								mainContent,
+								undefined,
+								currentModel.alias || currentModel.name
+							);
+							// 创建新的用户块
+							const newUserBlockText = ContextBuilder.createNewBlock('U', '');
+							// 组合文本
+							insertText = separator + thinkingBlockText + '\n\n' + assistantBlockText + '\n\n' + newUserBlockText;
+						} else {
+							console.log('No thinking content, skipping thinking block');
+							// 创建主要响应块
+							const assistantBlockText = ContextBuilder.createNewBlock(
+								'A', 
+								mainContent,
+								undefined,
+								currentModel.alias || currentModel.name
+							);
+							 // 创建新的用户块
+							const newUserBlockText = ContextBuilder.createNewBlock('U', '');
+							// 组合文本
+							insertText = separator + assistantBlockText + '\n\n' + newUserBlockText;
+						}
+
+						// 应用编辑
+						const edit = new vscode.WorkspaceEdit();
+						const endPosition = new vscode.Position(document.lineCount, 0);
 						edit.insert(document.uri, endPosition, insertText);
-						await vscode.workspace.applyEdit(edit);
+						const success = await vscode.workspace.applyEdit(edit);
 
-						const assistantLines = assistantBlockText.split('\n').length;
-						const separatorLines1 = separator.length > 0 ? 2 : 0;
-						const separatorLines2 = 2;
-						const newUserBlockStartLine = document.lineCount - newUserBlockText.split('\n').length; 
-
-						const newPosition = new vscode.Position(newUserBlockStartLine, 4);
-						editor.selection = new vscode.Selection(newPosition, newPosition);
-						editor.revealRange(new vscode.Range(newPosition, newPosition), vscode.TextEditorRevealType.InCenterIfOutsideViewport);
+						if (success) {
+							// 强制 StateManager 从更新后的文档重新加载状态
+							stateManager?.reloadStateFromDocument();
+							// 触发装饰器更新
+							if (editorEnhancement) {
+								editorEnhancement.updateDecorations(editor);
+							}
+							// 移动光标到新的用户块
+							const blocks = ChatParser.parseDocument(editor.document);
+							const userBlocks = blocks.filter(b => b.type === 'U');
+							const lastUserBlock = userBlocks[userBlocks.length - 1];
+							
+							if (lastUserBlock) {
+								const position = editor.document.positionAt(
+									editor.document.offsetAt(lastUserBlock.range.start) + 
+									lastUserBlock.range.end.character - lastUserBlock.range.start.character - 5 // 调整位置到内容开始处
+								);
+								editor.selection = new vscode.Selection(position, position);
+								editor.revealRange(lastUserBlock.range);
+							}
+						} else {
+							vscode.window.showErrorMessage('应用编辑失败。');
+						}
 					}
 				});
-
 			} catch (error) {
-				vscode.window.showErrorMessage(`发送请求时出错: ${error}`);
+				vscode.window.showErrorMessage(`发送请求失败: ${error instanceof Error ? error.message : String(error)}`);
 			}
 		})
 	);
@@ -492,6 +649,34 @@ export function activate(context: vscode.ExtensionContext) {
 			} catch (error) {
 				vscode.window.showErrorMessage(`删除 API Key 失败: ${error instanceof Error ? error.message : '未知错误'}`);
 			}
+		})
+	);
+
+	// 添加复制块内容的命令
+	context.subscriptions.push(
+		vscode.commands.registerCommand('vschat.copyBlockContent', async (content: string) => {
+			if (!content) {
+				const editor = vscode.window.activeTextEditor;
+				if (!editor || !isChatDocument(editor.document)) {
+					vscode.window.showWarningMessage('请先打开一个 .chat 文件。');
+					return;
+				}
+
+				const blocks = ChatParser.parseDocument(editor.document);
+				const position = editor.selection.active;
+				const currentBlock = blocks.find(block => block.range.contains(position));
+
+				if (!currentBlock) {
+					vscode.window.showWarningMessage('光标不在任何聊天块内。');
+					return;
+				}
+				
+				content = currentBlock.content;
+			}
+			
+			// 复制内容到剪贴板
+			await vscode.env.clipboard.writeText(content);
+			vscode.window.showInformationMessage('已复制块内容到剪贴板');
 		})
 	);
 

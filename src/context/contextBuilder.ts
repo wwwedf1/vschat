@@ -1,5 +1,5 @@
 import * as vscode from 'vscode';
-import { ChatBlock } from '../types';
+import { ChatBlock, BlockType } from '../types';
 import { ChatParser } from '../parser/chatParser';
 import { StateManager } from '../state/stateManager';
 
@@ -16,9 +16,14 @@ export class ContextBuilder {
 
         return activeBlocks
             .map(block => {
+                // 不包含注释块（N类型）在上下文中
+                if (block.type === 'N') {
+                    return '';
+                }
                 const prefix = this.getBlockPrefix(block);
                 return `${prefix}${block.content}`;
             })
+            .filter(text => text !== '') // 过滤掉空字符串
             .join('\n\n');
     }
 
@@ -30,26 +35,37 @@ export class ContextBuilder {
                 return '[用户] ';
             case 'A':
                 return block.name ? `[${block.name}] ` : '[助手] ';
+            case 'N':
+                return '[注释] ';
             default:
                 return '';
         }
     }
 
-    public static createBlockId(type: 'S' | 'U' | 'A'): string {
-        const timestamp = Date.now();
-        const random = Math.random().toString(36).substring(2, 8);
-        return `${type.toLowerCase()}_${timestamp}_${random}`;
-    }
-
-    public static createNewBlock(type: 'S' | 'U' | 'A', content: string, name?: string): string {
+    public static createNewBlock(type: BlockType, content: string, name?: string, modelAlias?: string): string {
         const id = this.createBlockId(type);
+        // 默认状态为 Active ('A')，除非是 Note ('N') 块
+        const defaultState = type === 'N' ? 'I' : 'A'; 
         return ChatParser.serializeBlock({
             type,
-            state: 'A',
+            state: defaultState,
             id,
             name,
+            modelAlias,
             content,
             range: new vscode.Range(0, 0, 0, 0) // 占位符，实际使用时会被忽略
         });
+    }
+
+    public static createThinkingBlock(content: string): string {
+        // 思维链的内容已经足够表达其用途，不需要额外添加Markdown标题
+
+        return this.createNewBlock('N', content);
+    }
+
+    private static createBlockId(type: BlockType): string {
+        const timestamp = Date.now();
+        const random = Math.floor(Math.random() * 10000);
+        return `${type}-${timestamp}-${random}`;
     }
 } 

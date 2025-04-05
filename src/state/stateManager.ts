@@ -59,32 +59,42 @@ export class StateManager {
     public updateDocument(): Thenable<boolean> {
         const editor = vscode.window.activeTextEditor;
         if (!editor || editor.document !== this.document) {
+            console.warn('updateDocument called but editor/document mismatch.');
             return Promise.resolve(false);
         }
 
-        const blocks = ChatParser.parseDocument(this.document);
+        // **重要**: 总是从当前文档内容解析最新的块信息
+        const currentBlocks = ChatParser.parseDocument(this.document);
         const edits: vscode.TextEdit[] = [];
 
-        blocks.forEach(block => {
-            const newState = this.currentState.get(block.id);
-            if (newState && newState !== block.state) {
-                const newBlock = { ...block, state: newState };
+        currentBlocks.forEach(block => {
+            // 获取 StateManager 中期望的状态
+            const desiredState = this.currentState.get(block.id);
+            
+            // 如果 StateManager 中有这个块的状态，并且与文档中的当前状态不同
+            if (desiredState && desiredState !== block.state) {
+                console.log(`Updating block ${block.id} state from ${block.state} to ${desiredState}`);
+                // 创建一个新的块对象，只更新状态
+                const newBlock = { ...block, state: desiredState };
+                // 生成替换编辑操作
                 edits.push(vscode.TextEdit.replace(block.range, ChatParser.serializeBlock(newBlock)));
+            } else if (!desiredState && this.currentState.has(block.id)){
+                 // StateManager中有记录，但状态与文档一致，或者StateManager中没有记录（理论上不应发生，除非块被外部删除）
+                 // 不需要生成编辑
+                 // console.log(`Block ${block.id} state (${block.state}) is consistent or not managed, skipping edit.`);
             }
         });
 
         if (edits.length === 0) {
+            console.log('updateDocument: No state changes detected requiring edits.');
             return Promise.resolve(false);
         }
 
+        console.log(`updateDocument: Applying ${edits.length} edits.`);
         const workspaceEdit = new vscode.WorkspaceEdit();
         workspaceEdit.set(this.document.uri, edits);
-        return vscode.workspace.applyEdit(workspaceEdit).then(success => {
-            if (success) {
-                // 成功应用编辑后，确保状态与文件一致
-                // this.reloadStateFromDocument(); // 在这里reload可能导致与updateDecorations竞争
-            }
-            return success;
-        });
+        return vscode.workspace.applyEdit(workspaceEdit);
+        // 不再需要 then 中的 reloadStateFromDocument，因为我们总是基于文档生成编辑
+        // 并且 reloadStateFromDocument 会在 applyEdit 成功后的主流程（如 toggle 命令或 sendRequest）中调用
     }
 } 

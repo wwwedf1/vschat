@@ -2,16 +2,17 @@
   "name": "vschat",
   "displayName": "VS Chat",
   "description": "一个轻量级的 VS Code AI 聊天扩展",
-  "version": "0.0.1",
-  "publisher": "你的发布者ID",
+  "version": "0.0.2",
+
   "author": {
-    "name": "你的名字"
+    "name": "名字"
   },
-  "license": "MIT",
   "repository": {
     "type": "git",
-    "url": "你的仓库URL"
+    "url": "https://github.com/wwwedf1/vschat.git"
   },
+  "license": "MIT",
+
   "keywords": [
     "chat",
     "ai",
@@ -63,8 +64,19 @@
         "title": "插入用户块"
       },
       {
+        "command": "vschat.insertNoteBlock",
+        "title": "插入注释块",
+        "category": "VSChat"
+      },
+      {
+        "command": "vschat.setNoteTitle",
+        "title": "设置注释块标题",
+        "category": "VSChat"
+      },
+      {
         "command": "vschat.renameBlock",
-        "title": "重命名块"
+        "title": "设置块标题（用于大纲视图）",
+        "category": "VSChat"
       },
       {
         "command": "vschat.selectModel",
@@ -91,6 +103,11 @@
         "command": "vschat.deleteProviderApiKey",
         "title": "删除 LLM Provider API Key",
         "category": "VSChat"
+      },
+      {
+        "command": "vschat.copyBlockContent",
+        "title": "复制块内容",
+        "category": "VSChat"
       }
     ],
     "keybindings": [
@@ -113,7 +130,7 @@
     "configuration": {
       "title": "VSChat",
       "properties": {
-        "aiChat.api.profiles": {
+        "vschat.api.profiles": {
           "type": "array",
           "items": {
             "type": "object",
@@ -139,29 +156,9 @@
           },
           "description": "API 配置列表"
         },
-        "aiChat.api.activeProfileName": {
+        "vschat.api.activeProfileName": {
           "type": "string",
           "description": "当前激活的 API 配置名称"
-        },
-        "aiChat.editor.folding.enabled": {
-          "type": "boolean",
-          "default": true,
-          "description": "启用代码折叠"
-        },
-        "aiChat.editor.folding.includeMarkdownHeadings": {
-          "type": "boolean",
-          "default": true,
-          "description": "在折叠中包含 Markdown 标题"
-        },
-        "aiChat.editor.highlightActiveState.enabled": {
-          "type": "boolean",
-          "default": true,
-          "description": "高亮显示活动状态"
-        },
-        "aiChat.editor.hideTags.enabled": {
-          "type": "boolean",
-          "default": false,
-          "description": "隐藏标签"
         },
         "vschat.llm.providers": {
           "type": "array",
@@ -184,33 +181,22 @@
                   "alias": "GPT-4"
                 }
               ]
+            },
+            {
+              "id": "deepseek",
+              "name": "DeepSeek",
+              "url": "https://api.deepseek.com/v1/chat/completions",
+              "models": [
+                {
+                  "id": "deepseek-chat",
+                  "name": "deepseek-chat",
+                  "providerId": "deepseek",
+                  "alias": "DeepSeek Chat"
+                }
+              ]
             }
           ],
           "description": "LLM providers configuration"
-        },
-        "vschat.files.exclude": {
-          "type": "object",
-          "default": {
-            "**/.git": true,
-            "**/.DS_Store": true,
-            "**/*.meta": true,
-            "library/": true,
-            "local/": true,
-            "temp/": true
-          },
-          "description": "配置要从文件浏览器中排除的文件"
-        },
-        "vschat.search.exclude": {
-          "type": "object",
-          "default": {
-            "**/node_modules": true,
-            "**/bower_components": true,
-            "build/": true,
-            "temp/": true,
-            "library/": true,
-            "**/*.anim": true
-          },
-          "description": "配置要从搜索结果中排除的文件"
         }
       }
     }

@@ -10,24 +10,42 @@ export class EditorEnhancement implements
     vscode.CodeActionProvider
 {
 
-    private activeStateDecoration: vscode.TextEditorDecorationType;
     private inactiveStateDecoration: vscode.TextEditorDecorationType;
+    private userActiveTagDecoration: vscode.TextEditorDecorationType;
+    private assistantActiveTagDecoration: vscode.TextEditorDecorationType;
+    private noteActiveTagDecoration: vscode.TextEditorDecorationType;
     private changeListenerDisposable: vscode.Disposable | undefined;
 
     constructor(
         private document: vscode.TextDocument,
-        private stateManager: StateManager
+        private stateManager: StateManager | undefined
     ) {
-        this.activeStateDecoration = vscode.window.createTextEditorDecorationType({
-            borderWidth: '0 0 0 2px',
-            borderStyle: 'solid',
-            borderColor: new vscode.ThemeColor('editor.selectionBackground'),
-            isWholeLine: true
-        });
-
         this.inactiveStateDecoration = vscode.window.createTextEditorDecorationType({
             opacity: '0.6',
             isWholeLine: true
+        });
+
+        const commonTagDecorationOptions: vscode.DecorationRenderOptions = {
+            borderRadius: '3px',
+            overviewRulerLane: vscode.OverviewRulerLane.Right,
+        };
+
+        this.userActiveTagDecoration = vscode.window.createTextEditorDecorationType({
+            ...commonTagDecorationOptions,
+            backgroundColor: 'rgba(0, 129, 9, 0.2)',
+            overviewRulerColor: 'rgba(59, 246, 227, 0.5)',
+        });
+
+        this.assistantActiveTagDecoration = vscode.window.createTextEditorDecorationType({
+            ...commonTagDecorationOptions,
+            backgroundColor: 'rgba(197, 34, 132, 0.2)',
+            overviewRulerColor: 'rgba(197, 34, 34, 0.5)',
+        });
+
+        this.noteActiveTagDecoration = vscode.window.createTextEditorDecorationType({
+            ...commonTagDecorationOptions,
+            backgroundColor: 'rgba(234, 179, 8, 0.2)',
+            overviewRulerColor: 'rgba(234, 179, 8, 0.5)',
         });
     }
 
@@ -40,8 +58,10 @@ export class EditorEnhancement implements
     }
 
     public dispose(): void {
-        this.activeStateDecoration.dispose();
         this.inactiveStateDecoration.dispose();
+        this.userActiveTagDecoration.dispose();
+        this.assistantActiveTagDecoration.dispose();
+        this.noteActiveTagDecoration.dispose();
         if (this.changeListenerDisposable) {
             this.changeListenerDisposable.dispose();
             this.changeListenerDisposable = undefined;
@@ -55,38 +75,23 @@ export class EditorEnhancement implements
     ): vscode.FoldingRange[] {
         if (document.languageId !== 'chat') return [];
 
-        const foldingRanges: vscode.FoldingRange[] = [];
         const blocks = ChatParser.parseDocument(document);
+        const ranges: vscode.FoldingRange[] = [];
 
         blocks.forEach(block => {
-            if (block.range.end.line > block.range.start.line) {
-                 foldingRanges.push(new vscode.FoldingRange(
-                    block.range.start.line,
-                    block.range.end.line,
-                    vscode.FoldingRangeKind.Region
-                ));
+            const startLine = block.range.start.line;
+            const endLine = block.range.end.line;
+            
+            if (endLine > startLine) {
+                ranges.push(new vscode.FoldingRange(startLine, endLine));
             }
 
-            const blockContent = document.getText(block.range);
-            const codeBlockRegex = /^```(?:\w*\n)?([\s\S]*?)\n```$/gm;
-            let match;
-            while ((match = codeBlockRegex.exec(blockContent)) !== null) {
-                const startIndex = match.index;
-                const endIndex = startIndex + match[0].length;
-                const startPos = document.positionAt(document.offsetAt(block.range.start) + startIndex);
-                const endPos = document.positionAt(document.offsetAt(block.range.start) + endIndex);
-
-                if (endPos.line > startPos.line) {
-                    foldingRanges.push(new vscode.FoldingRange(
-                        startPos.line,
-                        endPos.line -1,
-                        vscode.FoldingRangeKind.Region
-                    ));
-                }
+            if (block.type === 'N' && block.name === '思维链' && endLine > startLine) {
+                ranges.push(new vscode.FoldingRange(startLine, endLine, vscode.FoldingRangeKind.Comment));
             }
         });
 
-        return foldingRanges;
+        return ranges;
     }
 
     public provideDocumentSymbols(
@@ -95,37 +100,63 @@ export class EditorEnhancement implements
     ): vscode.DocumentSymbol[] {
         if (document.languageId !== 'chat') return [];
         const blocks = ChatParser.parseDocument(document);
-        return blocks.map(block => {
-            const symbol = new vscode.DocumentSymbol(
-                block.name || `[${block.type}] ${block.content.substring(0, 30)}...`,
-                '',
-                vscode.SymbolKind.Field,
-                block.range,
-                block.range
-            );
-            symbol.detail = block.state === 'A' ? '活动' : '非活动';
-            return symbol;
-        });
+        
+        // 只显示具有 'name' 属性的块
+        return blocks
+            .filter(block => block.name)
+            .map(block => {
+                const symbolName = `[${block.type}] ${block.name}`; // 使用明确的name属性
+
+                const symbol = new vscode.DocumentSymbol(
+                    symbolName,
+                    '',
+                    block.type === 'N' ? vscode.SymbolKind.File : vscode.SymbolKind.Field,
+                    block.range,
+                    block.range
+                );
+                symbol.detail = block.state === 'A' ? '活动' : '非活动';
+                return symbol;
+            });
     }
 
     public updateDecorations(editor: vscode.TextEditor): void {
         if (editor.document.languageId !== 'chat' || !this.stateManager) return;
 
         const blocks = ChatParser.parseDocument(this.document);
-        const activeRanges: vscode.Range[] = [];
         const inactiveRanges: vscode.Range[] = [];
+        const userActiveTagRanges: vscode.Range[] = [];
+        const assistantActiveTagRanges: vscode.Range[] = [];
+        const noteActiveTagRanges: vscode.Range[] = [];
 
         blocks.forEach(block => {
-            const state = this.stateManager.getBlockState(block.id) ?? 'I';
+            const tagRange = new vscode.Range(
+                block.range.start.translate(0, 1),
+                block.range.start.translate(0, 2)
+            );
+
+            const state = this.stateManager?.getBlockState(block.id) ?? 'I';
+
             if (state === 'A') {
-                activeRanges.push(block.range);
+                switch (block.type) {
+                    case 'U':
+                        userActiveTagRanges.push(tagRange);
+                        break;
+                    case 'A':
+                        assistantActiveTagRanges.push(tagRange);
+                        break;
+                    case 'N':
+                        noteActiveTagRanges.push(tagRange);
+                        break;
+                }
             } else {
                 inactiveRanges.push(block.range);
             }
         });
 
-        editor.setDecorations(this.activeStateDecoration, activeRanges);
         editor.setDecorations(this.inactiveStateDecoration, inactiveRanges);
+        editor.setDecorations(this.userActiveTagDecoration, userActiveTagRanges);
+        editor.setDecorations(this.assistantActiveTagDecoration, assistantActiveTagRanges);
+        editor.setDecorations(this.noteActiveTagDecoration, noteActiveTagRanges);
     }
 
     provideCodeActions(
@@ -141,19 +172,47 @@ export class EditorEnhancement implements
         const currentBlock = blocks.find(block => block.range.contains(position));
 
         if (currentBlock && position.line === currentBlock.range.start.line) {
+            const actions: vscode.CodeAction[] = [];
+            
+            // 检查是否已经存在相同的 action
+            const addUniqueAction = (action: vscode.CodeAction) => {
+                if (!actions.some(a => a.title === action.title)) {
+                    actions.push(action);
+                }
+            };
+            
+            // 切换激活状态
             const currentState = this.stateManager.getBlockState(currentBlock.id) ?? 'I';
             const actionTitle = `切换激活状态 (当前: ${currentState === 'A' ? '活动' : '非活动'})`;
 
-            const action = new vscode.CodeAction(actionTitle, vscode.CodeActionKind.QuickFix);
-            action.command = {
+            const toggleAction = new vscode.CodeAction(actionTitle, vscode.CodeActionKind.QuickFix);
+            toggleAction.command = {
                 command: 'vschat.toggleCurrentBlockState',
                 title: actionTitle
             };
-            action.isPreferred = true;
+            toggleAction.isPreferred = true;
+            addUniqueAction(toggleAction);
+            
+            // 设置块名字
+            const renameAction = new vscode.CodeAction('设置块标题', vscode.CodeActionKind.QuickFix);
+            renameAction.command = {
+                command: 'vschat.renameBlock',
+                title: '设置块标题'
+            };
+            addUniqueAction(renameAction);
+            
+            // 复制块内容
+            const copyAction = new vscode.CodeAction('复制块内容', vscode.CodeActionKind.QuickFix);
+            copyAction.command = {
+                command: 'vschat.copyBlockContent',
+                title: '复制块内容',
+                arguments: [currentBlock.content]
+            };
+            addUniqueAction(copyAction);
 
-            return [action];
+            return actions;
         }
 
         return undefined;
     }
-} 
+}

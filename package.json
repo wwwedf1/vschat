@@ -1,0 +1,237 @@
+{
+  "name": "vschat",
+  "displayName": "VS Chat",
+  "description": "一个轻量级的 VS Code AI 聊天扩展",
+  "version": "0.0.1",
+  "publisher": "你的发布者ID",
+  "author": {
+    "name": "你的名字"
+  },
+  "license": "MIT",
+  "repository": {
+    "type": "git",
+    "url": "你的仓库URL"
+  },
+  "keywords": [
+    "chat",
+    "ai",
+    "llm",
+    "copilot",
+    "assistant"
+  ],
+  "engines": {
+    "vscode": "^1.99.0"
+  },
+  "categories": [
+    "Other"
+  ],
+  "activationEvents": [
+    "onLanguage:chat"
+  ],
+  "main": "./out/extension.js",
+  "contributes": {
+    "languages": [
+      {
+        "id": "chat",
+        "aliases": ["Chat", "chat"],
+        "extensions": [".chat"],
+        "configuration": "./language-configuration.json"
+      }
+    ],
+    "grammars": [
+      {
+        "language": "chat",
+        "scopeName": "text.chat",
+        "path": "./syntaxes/chat.tmLanguage.json"
+      }
+    ],
+    "commands": [
+      {
+        "command": "vschat.toggleCurrentBlockState",
+        "title": "切换当前聊天块激活状态"
+      },
+      {
+        "command": "vschat.pushState",
+        "title": "保存当前状态"
+      },
+      {
+        "command": "vschat.popState",
+        "title": "恢复上一个状态"
+      },
+      {
+        "command": "vschat.insertUserBlock",
+        "title": "插入用户块"
+      },
+      {
+        "command": "vschat.renameBlock",
+        "title": "重命名块"
+      },
+      {
+        "command": "vschat.selectModel",
+        "title": "选择AI模型",
+        "category": "VSChat"
+      },
+      {
+        "command": "vschat.sendCurrentContextRequest",
+        "title": "发送聊天请求",
+        "category": "VSChat",
+        "icon": "$(send)"
+      },
+      {
+        "command": "vschat.verifyLLMProvider",
+        "title": "验证 LLM Provider",
+        "category": "VSChat"
+      },
+      {
+        "command": "vschat.setProviderApiKey",
+        "title": "设置 LLM Provider API Key",
+        "category": "VSChat"
+      },
+      {
+        "command": "vschat.deleteProviderApiKey",
+        "title": "删除 LLM Provider API Key",
+        "category": "VSChat"
+      }
+    ],
+    "keybindings": [
+      {
+        "command": "vschat.toggleCurrentBlockState",
+        "key": "ctrl+alt+t",
+        "mac": "cmd+alt+t",
+        "when": "editorTextFocus && editorLangId == chat"
+      }
+    ],
+    "menus": {
+      "editor/title": [
+        {
+          "command": "vschat.sendCurrentContextRequest",
+          "group": "navigation",
+          "when": "editorLangId == chat"
+        }
+      ]
+    },
+    "configuration": {
+      "title": "VSChat",
+      "properties": {
+        "aiChat.api.profiles": {
+          "type": "array",
+          "items": {
+            "type": "object",
+            "properties": {
+              "profileName": {
+                "type": "string",
+                "description": "API 配置名称"
+              },
+              "endpoint": {
+                "type": "string",
+                "description": "API 端点"
+              },
+              "model": {
+                "type": "string",
+                "description": "模型名称"
+              },
+              "apiKeySecret": {
+                "type": "string",
+                "description": "API 密钥名称"
+              }
+            },
+            "required": ["profileName", "endpoint", "model", "apiKeySecret"]
+          },
+          "description": "API 配置列表"
+        },
+        "aiChat.api.activeProfileName": {
+          "type": "string",
+          "description": "当前激活的 API 配置名称"
+        },
+        "aiChat.editor.folding.enabled": {
+          "type": "boolean",
+          "default": true,
+          "description": "启用代码折叠"
+        },
+        "aiChat.editor.folding.includeMarkdownHeadings": {
+          "type": "boolean",
+          "default": true,
+          "description": "在折叠中包含 Markdown 标题"
+        },
+        "aiChat.editor.highlightActiveState.enabled": {
+          "type": "boolean",
+          "default": true,
+          "description": "高亮显示活动状态"
+        },
+        "aiChat.editor.hideTags.enabled": {
+          "type": "boolean",
+          "default": false,
+          "description": "隐藏标签"
+        },
+        "vschat.llm.providers": {
+          "type": "array",
+          "default": [
+            {
+              "id": "openai",
+              "name": "OpenAI",
+              "url": "https://api.openai.com/v1/chat/completions",
+              "models": [
+                {
+                  "id": "gpt-3.5-turbo",
+                  "name": "gpt-3.5-turbo",
+                  "providerId": "openai",
+                  "alias": "GPT-3.5"
+                },
+                {
+                  "id": "gpt-4",
+                  "name": "gpt-4",
+                  "providerId": "openai",
+                  "alias": "GPT-4"
+                }
+              ]
+            }
+          ],
+          "description": "LLM providers configuration"
+        },
+        "vschat.files.exclude": {
+          "type": "object",
+          "default": {
+            "**/.git": true,
+            "**/.DS_Store": true,
+            "**/*.meta": true,
+            "library/": true,
+            "local/": true,
+            "temp/": true
+          },
+          "description": "配置要从文件浏览器中排除的文件"
+        },
+        "vschat.search.exclude": {
+          "type": "object",
+          "default": {
+            "**/node_modules": true,
+            "**/bower_components": true,
+            "build/": true,
+            "temp/": true,
+            "library/": true,
+            "**/*.anim": true
+          },
+          "description": "配置要从搜索结果中排除的文件"
+        }
+      }
+    }
+  },
+  "scripts": {
+    "vscode:prepublish": "npm run compile",
+    "compile": "tsc -p ./",
+    "watch": "tsc -watch -p ./",
+    "pretest": "npm run compile && npm run lint",
+    "lint": "eslint src",
+    "test": "vscode-test"
+  },
+  "devDependencies": {
+    "@types/vscode": "^1.99.0",
+    "@types/mocha": "^10.0.10",
+    "@types/node": "20.x",
+    "@typescript-eslint/eslint-plugin": "^8.28.0",
+    "@typescript-eslint/parser": "^8.28.0",
+    "eslint": "^9.23.0",
+    "typescript": "^5.8.2",
+    "@vscode/test-cli": "^0.0.10",
+    "@vscode/test-electron": "^2.4.1"
+  }
+}

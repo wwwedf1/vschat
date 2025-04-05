@@ -1,0 +1,39 @@
+{
+  "comments": {
+    // 根据需要定义注释规则，如果 .chat 文件不需要注释，可以移除此部分
+    // "lineComment": "//",
+    // "blockComment": [ "/*", "*/" ]
+  },
+  "brackets": [
+    ["{", "}"],
+    ["[", "]"],
+    ["(", ")"],
+    ["<", ">"]
+  ],
+  "autoClosingPairs": [
+    { "open": "{", "close": "}" },
+    { "open": "[", "close": "]" },
+    { "open": "(", "close": ")" },
+    { "open": "`", "close": "`" },
+    { "open": "\"", "close": "\"", "notIn": ["string"] },
+    { "open": "'", "close": "'", "notIn": ["string", "comment"] },
+    { "open": "<S", "close": "></S>" },
+    { "open": "<U", "close": "></U>" },
+    { "open": "<A", "close": "></A>" }
+  ],
+  "surroundingPairs": [
+    { "open": "{", "close": "}" },
+    { "open": "[", "close": "]" },
+    { "open": "(", "close": ")" },
+    { "open": "<", "close": ">" },
+    { "open": "`", "close": "`" },
+    { "open": "\"", "close": "\"" },
+    { "open": "'", "close": "'" }
+  ],
+  "folding": {
+    "markers": {
+      "start": "^\\s*```",
+      "end": "^\\s*```"
+    }
+  }
+} 

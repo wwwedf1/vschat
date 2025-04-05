@@ -1,0 +1,41 @@
+{
+  "$schema": "https://raw.githubusercontent.com/martinring/tmlanguage/master/tmlanguage.json",
+  "name": "Chat",
+  "scopeName": "text.chat",
+  "patterns": [
+    {
+      "include": "#block"
+    }
+  ],
+  "repository": {
+    "block": {
+      "name": "meta.block.chat",
+      "begin": "(<([SUA])\\s+([AI])\\s+id=\"([^\"]+)\"(?:\\s+name=\"([^\"]+)\")?\\s*>)",
+      "beginCaptures": {
+        "1": { "name": "meta.tag.block.chat" },
+        "2": { "name": "entity.name.tag.chat" },
+        "3": { "name": "entity.other.attribute-name.state.chat" },
+        "4": { "name": "string.quoted.double.id.chat" },
+        "5": { "name": "string.quoted.double.name.chat" },
+        "6": { "name": "punctuation.definition.tag.end.chat" }
+      },
+      "end": "(</\\2>)",
+      "endCaptures": {
+        "1": { "name": "meta.tag.block.chat" },
+        "2": { "name": "punctuation.definition.tag.begin.chat" },
+        "3": { "name": "entity.name.tag.chat" },
+        "4": { "name": "punctuation.definition.tag.end.chat" }
+      },
+      "patterns": [
+        {
+          "contentName": "text.markdown",
+          "begin": "(?!</[SUA]>)",
+          "end": "(?=</[SUA]>)",
+          "patterns": [
+            { "include": "text.html.markdown" }
+          ]
+        }
+      ]
+    }
+  }
+} 

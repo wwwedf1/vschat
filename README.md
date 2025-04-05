@@ -6,10 +6,9 @@
 
 - 支持多种 LLM Provider（OpenAI、DeepSeek 等）
 - 安全的 API Key 管理
-- 聊天上下文管理
+- 高效的手动聊天上下文管理
 - 代码块折叠
-- Markdown 支持
-- 自定义配置选项
+- Markdown 染色
 
 ## 安装要求
 
@@ -46,7 +45,6 @@
 ## 快捷键
 
 - `Ctrl+Alt+T` (Mac: `Cmd+Alt+T`): 切换当前聊天块状态
-- 更多快捷键可在 VS Code 键盘快捷方式设置中自定义
 
 ## 已知问题
 

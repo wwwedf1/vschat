@@ -69,8 +69,8 @@
         "category": "VSChat"
       },
       {
-        "command": "vschat.setNoteTitle",
-        "title": "设置注释块标题",
+        "command": "vschat.insertBlock",
+        "title": "插入聊天块",
         "category": "VSChat"
       },
       {
@@ -108,6 +108,11 @@
         "command": "vschat.copyBlockContent",
         "title": "复制块内容",
         "category": "VSChat"
+      },
+      {
+        "command": "vschat.insertDefaultProviderTemplate",
+        "title": "插入默认 Provider 配置模板",
+        "category": "VSChat"
       }
     ],
     "keybindings": [
@@ -115,6 +120,12 @@
         "command": "vschat.toggleCurrentBlockState",
         "key": "ctrl+alt+t",
         "mac": "cmd+alt+t",
+        "when": "editorTextFocus && editorLangId == chat"
+      },
+      {
+        "command": "vschat.insertBlock",
+        "key": "ctrl+alt+enter",
+        "mac": "cmd+alt+enter",
         "when": "editorTextFocus && editorLangId == chat"
       }
     ],

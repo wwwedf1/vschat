@@ -8,7 +8,7 @@ import { EditorEnhancement } from './editor/editorEnhancement';
 import { ConfigManager } from './config/configManager';
 import { LLMService } from './llm/service';
 import { LLMStatusBar } from './llm/statusBar';
-import { LLMRequest, LLMProvider, LLMModel, LLMVerificationResponse, BlockState, ChatBlock } from './types';
+import { LLMRequest, LLMProvider, LLMModel, LLMVerificationResponse, BlockState, ChatBlock, BlockType } from './types';
 
 let editorEnhancement: EditorEnhancement | undefined;
 let stateManager: StateManager | undefined;
@@ -137,83 +137,6 @@ export function activate(context: vscode.ExtensionContext) {
 					vscode.window.showWarningMessage('没有可撤销的状态。');
 				}
 			}
-		})
-	);
-
-	context.subscriptions.push(
-		vscode.commands.registerCommand('vschat.insertUserBlock', async () => {
-			const editor = vscode.window.activeTextEditor;
-			if (editor && isChatDocument(editor.document)) {
-				const newBlock = ContextBuilder.createNewBlock('U', '');
-				await editor.edit(editBuilder => {
-					editBuilder.insert(editor.selection.active, newBlock);
-				});
-			}
-		})
-	);
-
-	context.subscriptions.push(
-		vscode.commands.registerCommand('vschat.insertNoteBlock', async () => {
-			const editor = vscode.window.activeTextEditor;
-			if (editor && isChatDocument(editor.document)) {
-				const name = await vscode.window.showInputBox({
-					prompt: '输入注释块标题（可选，用于在大纲视图中显示）',
-					placeHolder: '注释'
-				});
-				
-				// 如果用户提供了名称，创建带名称的注释块，否则创建无名称的注释块
-				const newBlock = ContextBuilder.createNewBlock('N', '', name || undefined);
-				await editor.edit(editBuilder => {
-					editBuilder.insert(editor.selection.active, newBlock);
-				});
-			}
-		})
-	);
-
-	context.subscriptions.push(
-		vscode.commands.registerCommand('vschat.setNoteTitle', async () => {
-			const editor = vscode.window.activeTextEditor;
-			if (!editor || !isChatDocument(editor.document)) {
-				vscode.window.showWarningMessage('请先打开一个 .chat 文件。');
-				return;
-			}
-
-			const blocks = ChatParser.parseDocument(editor.document);
-			const position = editor.selection.active;
-			const currentBlock = blocks.find(block => block.range.contains(position));
-
-			if (!currentBlock) {
-				vscode.window.showWarningMessage('光标不在任何聊天块内。');
-				return;
-			}
-			
-			if (currentBlock.type !== 'N') {
-				vscode.window.showWarningMessage('当前块不是注释块，无法设置标题。');
-				return;
-			}
-
-			const title = await vscode.window.showInputBox({
-				prompt: '输入注释标题',
-				placeHolder: '标题',
-				value: currentBlock.name
-			});
-
-			if (title === undefined) {
-				return; // 用户取消了操作
-			}
-
-			// 只更新块的名称属性，不修改内容
-			const newBlock = { 
-				...currentBlock, 
-				name: title
-			};
-			
-			const edit = new vscode.WorkspaceEdit();
-			edit.replace(editor.document.uri, currentBlock.range, ChatParser.serializeBlock(newBlock));
-			await vscode.workspace.applyEdit(edit);
-
-			// 显示通知
-			vscode.window.showInformationMessage(`已设置注释块标题: "${title}"`);
 		})
 	);
 
@@ -677,6 +600,90 @@ export function activate(context: vscode.ExtensionContext) {
 			// 复制内容到剪贴板
 			await vscode.env.clipboard.writeText(content);
 			vscode.window.showInformationMessage('已复制块内容到剪贴板');
+		})
+	);
+
+	// Helper function to calculate the cursor position
+	function calculateCursorPosition(document: vscode.TextDocument, start: vscode.Position, blockType: string, blockName?: string): vscode.Position {
+		const baseOffset = `<${blockType} A id="`.length + 36; // Base length including type and UUID
+		const nameOffset = blockName ? ` name="${blockName}">`.length : `>`.length; // Additional length for name if present
+		const totalOffset = baseOffset + nameOffset;
+		return document.positionAt(document.offsetAt(start) + totalOffset);
+	}
+	
+	// Register the new insertBlock command
+	context.subscriptions.push(
+		vscode.commands.registerCommand('vschat.insertBlock', async () => {
+			const editor = vscode.window.activeTextEditor;
+			if (!editor || !isChatDocument(editor.document)) {
+				vscode.window.showWarningMessage('请先打开一个 .chat 文件。');
+				return;
+			}
+
+			// Define block types and descriptions
+			const blockTypes: { label: string; description: string; type: BlockType }[] = [
+				{ label: 'U', description: '用户块 (User)', type: 'U' },
+				{ label: 'A', description: '助手块 (Assistant)', type: 'A' },
+				{ label: 'S', description: '系统块 (System)', type: 'S' },
+				{ label: 'N', description: '注释块 (Note)', type: 'N' },
+			];
+
+			const selectedType = await vscode.window.showQuickPick(blockTypes, {
+				placeHolder: '选择要插入的块类型'
+			});
+
+			if (!selectedType) {
+				return; // User cancelled
+			}
+
+			let blockName: string | undefined = undefined;
+			if (selectedType.type === 'N') {
+				blockName = await vscode.window.showInputBox({
+					prompt: '输入注释块标题（可选，用于大纲视图）',
+					placeHolder: '注释'
+				});
+				// If user cancels the input box, blockName will be undefined, which is fine
+			}
+
+			const newBlockContent = ContextBuilder.createNewBlock(selectedType.type, '', blockName || undefined);
+
+			await editor.edit(editBuilder => {
+				// Insert at the current cursor position or the end of the selection
+				editBuilder.insert(editor.selection.end, newBlockContent);
+			});
+			
+			// Optional: Move cursor inside the newly created block
+			const newBlockRange = new vscode.Range(editor.selection.end, editor.selection.end.translate(0, newBlockContent.length));
+			const position = calculateCursorPosition(editor.document, newBlockRange.start, selectedType.type, blockName);
+			editor.selection = new vscode.Selection(position, position);
+			editor.revealRange(newBlockRange);
+
+		})
+	);
+
+	// Command to insert default LLM provider template
+	context.subscriptions.push(
+		vscode.commands.registerCommand('vschat.insertDefaultProviderTemplate', async () => {
+			const defaultProviders = ConfigManager.getDefaultProviders();
+			const templateJson = JSON.stringify(defaultProviders, null, 2); // Pretty print JSON
+
+			const editor = vscode.window.activeTextEditor;
+			if (editor) {
+				// Insert at cursor position
+				await editor.edit(editBuilder => {
+					editBuilder.insert(editor.selection.active, templateJson);
+				});
+				vscode.window.showInformationMessage('已在当前光标位置插入默认 Provider 配置模板。');
+			} else {
+				// If no editor is active, try to open settings.json and insert there (more complex)
+				// For simplicity, let's just show a message and the template in output
+				console.log("Default LLM Providers Template:\n", templateJson);
+				vscode.window.showInformationMessage('请打开配置文件（如 settings.json）并粘贴以下内容。已输出到控制台。 ');
+				// Optionally, show the JSON in an information message or output channel
+				const outputChannel = vscode.window.createOutputChannel("VSChat Provider Template");
+				outputChannel.appendLine(templateJson);
+				outputChannel.show();
+			}
 		})
 	);
 

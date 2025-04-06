@@ -169,31 +169,36 @@ export class EditorEnhancement implements
 
         const blocks = ChatParser.parseDocument(document);
         const position = range.start;
-        const currentBlock = blocks.find(block => block.range.contains(position));
+        // Only show actions if the cursor is on the first line of a block
+        const currentBlock = blocks.find(block => block.range.start.line === position.line && block.range.contains(position));
 
-        if (currentBlock && position.line === currentBlock.range.start.line) {
+        if (currentBlock) {
             const actions: vscode.CodeAction[] = [];
             
-            // 检查是否已经存在相同的 action
+            // Helper to prevent duplicates based on COMMAND, not title
             const addUniqueAction = (action: vscode.CodeAction) => {
-                if (!actions.some(a => a.title === action.title)) {
+                if (action.command && !actions.some(a => a.command?.command === action.command?.command)) {
                     actions.push(action);
+                } else if (!action.command && !actions.some(a => a.title === action.title)) { // Fallback for actions without command
+                     actions.push(action);
                 }
             };
             
-            // 切换激活状态
+            // 1. Toggle Activation State Action
             const currentState = this.stateManager.getBlockState(currentBlock.id) ?? 'I';
-            const actionTitle = `切换激活状态 (当前: ${currentState === 'A' ? '活动' : '非活动'})`;
-
-            const toggleAction = new vscode.CodeAction(actionTitle, vscode.CodeActionKind.QuickFix);
+            // Use a fixed title for toggle action to ensure uniqueness check works
+            const toggleActionTitle = '切换块激活状态'; 
+            const toggleAction = new vscode.CodeAction(toggleActionTitle, vscode.CodeActionKind.QuickFix);
             toggleAction.command = {
                 command: 'vschat.toggleCurrentBlockState',
-                title: actionTitle
+                title: toggleActionTitle, // Title for the command execution itself
+                // Optionally add tooltip or detail to show current state if needed
+                // tooltip: `当前状态: ${currentState === 'A' ? '活动' : '非活动'}`
             };
-            toggleAction.isPreferred = true;
+            // toggleAction.isPreferred = true; // Preference might change based on context
             addUniqueAction(toggleAction);
             
-            // 设置块名字
+            // 2. Rename Block Action (Common for all types)
             const renameAction = new vscode.CodeAction('设置块标题', vscode.CodeActionKind.QuickFix);
             renameAction.command = {
                 command: 'vschat.renameBlock',
@@ -201,7 +206,7 @@ export class EditorEnhancement implements
             };
             addUniqueAction(renameAction);
             
-            // 复制块内容
+            // 3. Copy Block Content Action (Common for all types)
             const copyAction = new vscode.CodeAction('复制块内容', vscode.CodeActionKind.QuickFix);
             copyAction.command = {
                 command: 'vschat.copyBlockContent',

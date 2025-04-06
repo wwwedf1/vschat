@@ -37,14 +37,17 @@ export interface ExtensionConfig {
         activeProfileName: string;
     };
     editor: EditorConfig;
+    llm: {
+        providers: LLMProvider[];
+    };
 }
 
 export interface LLMProvider {
     id: string;
     name: string;
     url: string;
-    apiKey: string;
     models: LLMModel[];
+    apiKey?: string;
 }
 
 export interface LLMModel {

@@ -58,8 +58,6 @@ export class ContextBuilder {
     }
 
     public static createThinkingBlock(content: string): string {
-        // 思维链的内容已经足够表达其用途，不需要额外添加Markdown标题
-
         return this.createNewBlock('N', content);
     }
 

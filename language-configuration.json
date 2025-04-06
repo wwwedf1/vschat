@@ -16,10 +16,7 @@
     { "open": "(", "close": ")" },
     { "open": "`", "close": "`" },
     { "open": "\"", "close": "\"", "notIn": ["string"] },
-    { "open": "'", "close": "'", "notIn": ["string", "comment"] },
-    { "open": "<S", "close": "></S>" },
-    { "open": "<U", "close": "></U>" },
-    { "open": "<A", "close": "></A>" }
+    { "open": "'", "close": "'", "notIn": ["string", "comment"] }
   ],
   "surroundingPairs": [
     { "open": "{", "close": "}" },

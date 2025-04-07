@@ -1,4 +1,5 @@
 import * as vscode from 'vscode';
+import { TextProcessingRule, TextProcessingResult } from './parser/textProcessor';
 
 export type BlockType = 'S' | 'U' | 'A' | 'N' | 'Tool';
 export type BlockState = 'A' | 'I';
@@ -108,4 +109,6 @@ export interface LLMVerificationResponse {
         finish_reason: string;
         index: number;
     }>;
-} 
+}
+
+export { TextProcessingRule, TextProcessingResult }; 

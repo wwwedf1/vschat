@@ -1,5 +1,7 @@
 import * as vscode from 'vscode';
 import { ChatBlock, BlockType, BlockState } from '../types';
+import { TextProcessor } from './textProcessor';
+import { TextProcessingConfig } from '../config/textProcessingConfig';
 
 export class ChatParser {
     private static readonly BLOCK_REGEX = /<([SUAN])\s+([AI])\s+id="([^"]+)"(?:\s+name="([^"]+)")?(?:\s+model="([^"]+)")?\s*>(.*?)<\/\1>/gs;
@@ -85,14 +87,33 @@ export class ChatParser {
             console.log('Found thinking content in field `reasoning_content`:', thinkingContent);
             // 注意：此时 mainContent 仍然是原始的 message.content
         } else {
-            // 如果没有独立字段，再检查标签格式
-            const thinkRegex = /<think>([\s\S]*?)<\/think>/;
-            const match = mainContent.match(thinkRegex);
-            if (match) {
-                thinkingContent = match[1].trim();
-                // 如果找到标签，需要从 mainContent 中移除标签
-                mainContent = mainContent.replace(thinkRegex, '').trim();
-                console.log('Found thinking content in <think> tags:', thinkingContent);
+            // 如果没有独立字段，再使用文本处理器提取思维链
+            const thinkingRules = TextProcessingConfig.getRulesByPurpose('thinking-chain');
+            
+            if (thinkingRules.length > 0) {
+                // 应用规则处理文本
+                const processResult = TextProcessor.processTextWithRules(mainContent, thinkingRules);
+                
+                // 如果成功提取了内容
+                if (processResult.extractedBlocks.length > 0) {
+                    // 更新主内容和思维链内容
+                    mainContent = processResult.finalText.trim();
+                    thinkingContent = processResult.extractedBlocks[0].content;
+                    console.log('Extracted thinking content using text processor:', thinkingContent);
+                } else {
+                    // 如果没有匹配到思维链模式，则保持原样
+                    console.log('No thinking content pattern matched using text processor.');
+                }
+            } else {
+                // 如果没有配置思维链提取规则，回退到原始实现（向后兼容）
+                const thinkRegex = /<think>([\s\S]*?)<\/think>/;
+                const match = mainContent.match(thinkRegex);
+                if (match) {
+                    thinkingContent = match[1].trim();
+                    // 如果找到标签，需要从 mainContent 中移除标签
+                    mainContent = mainContent.replace(thinkRegex, '').trim();
+                    console.log('Found thinking content in <think> tags (legacy method):', thinkingContent);
+                }
             }
         }
 

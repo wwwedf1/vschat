@@ -9,6 +9,8 @@ import { ConfigManager } from './config/configManager';
 import { LLMService } from './llm/service';
 import { LLMStatusBar } from './llm/statusBar';
 import { LLMRequest, LLMProvider, LLMModel, LLMVerificationResponse, BlockState, ChatBlock, BlockType } from './types';
+import { TextProcessor } from './parser/textProcessor';
+import { TextProcessingConfig } from './config/textProcessingConfig';
 
 let editorEnhancement: EditorEnhancement | undefined;
 let stateManager: StateManager | undefined;
@@ -664,25 +666,165 @@ export function activate(context: vscode.ExtensionContext) {
 	// Command to insert default LLM provider template
 	context.subscriptions.push(
 		vscode.commands.registerCommand('vschat.insertDefaultProviderTemplate', async () => {
-			const defaultProviders = ConfigManager.getDefaultProviders();
-			const templateJson = JSON.stringify(defaultProviders, null, 2); // Pretty print JSON
+			// 提供用户选择模板类型
+			const templateTypes = [
+				{ label: 'AI供应商配置模板', description: '包含OpenAI和DeepSeek的默认配置' },
+				{ label: '文本处理规则配置模板', description: '包含几个常用文本处理规则示例' }
+			];
+			
+			const selectedType = await vscode.window.showQuickPick(templateTypes, {
+				placeHolder: '选择要插入的模板类型'
+			});
+			
+			if (!selectedType) {
+				return; // 用户取消选择
+			}
+			
+			let templateJson = '';
+			
+			if (selectedType.label === 'AI供应商配置模板') {
+				const defaultProviders = ConfigManager.getDefaultProviders();
+				templateJson = JSON.stringify(defaultProviders, null, 2); // 格式化JSON
+			} else {
+				// 文本处理规则模板
+				const regexTemplates = TextProcessingConfig.getTemplateRules();
+				templateJson = JSON.stringify(regexTemplates, null, 2);
+			}
 
 			const editor = vscode.window.activeTextEditor;
 			if (editor) {
-				// Insert at cursor position
+				// 在光标位置插入
 				await editor.edit(editBuilder => {
 					editBuilder.insert(editor.selection.active, templateJson);
 				});
-				vscode.window.showInformationMessage('已在当前光标位置插入默认 Provider 配置模板。');
+				vscode.window.showInformationMessage(`已在当前光标位置插入${selectedType.label}。`);
 			} else {
-				// If no editor is active, try to open settings.json and insert there (more complex)
-				// For simplicity, let's just show a message and the template in output
-				console.log("Default LLM Providers Template:\n", templateJson);
-				vscode.window.showInformationMessage('请打开配置文件（如 settings.json）并粘贴以下内容。已输出到控制台。 ');
-				// Optionally, show the JSON in an information message or output channel
-				const outputChannel = vscode.window.createOutputChannel("VSChat Provider Template");
+				// 如果没有活动编辑器，显示在输出面板
+				console.log(`${selectedType.label}:\n`, templateJson);
+				vscode.window.showInformationMessage(`请打开配置文件并粘贴以下内容。已输出到控制台。`);
+				// 可选，在输出通道显示JSON
+				const outputChannel = vscode.window.createOutputChannel("VSChat 配置模板");
 				outputChannel.appendLine(templateJson);
 				outputChannel.show();
+			}
+		})
+	);
+
+	// 添加提取选中内容到新块的命令
+	context.subscriptions.push(
+		vscode.commands.registerCommand('vschat.extractSelectionToBlock', async () => {
+			const editor = vscode.window.activeTextEditor;
+			if (!editor || !isChatDocument(editor.document)) {
+				vscode.window.showWarningMessage('请先打开一个 .chat 文件。');
+				return;
+			}
+
+			// 获取当前选择的文本
+			const selection = editor.selection;
+			if (selection.isEmpty) {
+				vscode.window.showWarningMessage('请先选择要提取的文本。');
+				return;
+			}
+
+			const selectedText = editor.document.getText(selection);
+			if (!selectedText || selectedText.trim() === '') {
+				vscode.window.showWarningMessage('选中的文本为空，无法提取。');
+				return;
+			}
+
+			// 默认使用注释块，但允许用户选择块类型
+			const blockTypes: { label: string; description: string; type: BlockType }[] = [
+				{ label: 'N', description: '注释块 (Note)', type: 'N' },
+				{ label: 'U', description: '用户块 (User)', type: 'U' },
+				{ label: 'A', description: '助手块 (Assistant)', type: 'A' },
+				{ label: 'S', description: '系统块 (System)', type: 'S' }
+			];
+
+			const selectedType = await vscode.window.showQuickPick(blockTypes, {
+				placeHolder: '选择要创建的块类型',
+				ignoreFocusOut: true
+			});
+
+			if (!selectedType) {
+				return; // 用户取消了操作
+			}
+
+			// 如果是注释块，可以允许用户设置标题
+			let blockName: string | undefined = undefined;
+			if (selectedType.type === 'N') {
+				// 获取默认注释块名称
+				const config = vscode.workspace.getConfiguration('vschat');
+				const defaultName = config.get<string>('textProcessing.defaultNoteBlockName', '注释');
+				
+				blockName = await vscode.window.showInputBox({
+					prompt: '输入注释块标题（可选，用于大纲视图）',
+					placeHolder: defaultName,
+					value: defaultName,
+					ignoreFocusOut: true
+				});
+				// 如果用户取消输入，使用默认值
+				blockName = blockName || defaultName;
+			}
+
+			// 创建提取规则
+			const extractRule = {
+				id: 'extract-selection',
+				name: '提取选中内容',
+				description: '将选中内容提取到新块',
+				pattern: {
+					customMatcher: (text: string) => ({
+						matched: true,
+						content: text,
+						start: 0,
+						end: text.length
+					})
+				},
+				processorType: 'extract' as const,
+				processor: {
+					extractToBlock: {
+						blockType: selectedType.type as 'U' | 'A' | 'S' | 'N',
+						blockName: blockName,
+						removeFromSource: true
+					}
+				}
+			};
+
+			// 处理文本
+			const result = TextProcessor.processText(selectedText, extractRule);
+			
+			if (!result.success || !result.extractedBlock) {
+				vscode.window.showErrorMessage('提取内容失败。');
+				return;
+			}
+
+			// 创建新块的内容
+			const newBlockContent = ContextBuilder.createNewBlock(
+				result.extractedBlock.type,
+				result.extractedBlock.content,
+				result.extractedBlock.name
+			);
+
+			// 执行编辑操作
+			const edit = new vscode.WorkspaceEdit();
+			
+			// 替换选中文本（删除原内容）
+			edit.delete(editor.document.uri, selection);
+			
+			// 在选择位置插入新块
+			edit.insert(editor.document.uri, selection.start, newBlockContent);
+			
+			// 应用编辑
+			const success = await vscode.workspace.applyEdit(edit);
+			
+			if (success) {
+				// 移动光标到新块的末尾
+				const newPosition = selection.start.translate(0, newBlockContent.length);
+				editor.selection = new vscode.Selection(newPosition, newPosition);
+				editor.revealRange(new vscode.Range(selection.start, newPosition));
+				
+				vscode.window.showInformationMessage(`已将选中内容提取到${selectedType.description}中。`);
+			} else {
+				vscode.window.showErrorMessage('提取内容到新块失败。');
 			}
 		})
 	);

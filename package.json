@@ -2,7 +2,7 @@
   "name": "vschat",
   "displayName": "VS Chat",
   "description": "一个轻量级的 VS Code AI 聊天扩展",
-  "version": "0.0.2",
+  "version": "0.0.3",
 
   "author": {
     "name": "名字"
@@ -113,6 +113,11 @@
         "command": "vschat.insertDefaultProviderTemplate",
         "title": "插入默认 Provider 配置模板",
         "category": "VSChat"
+      },
+      {
+        "command": "vschat.extractSelectionToBlock",
+        "title": "提取选中内容到新块",
+        "category": "VSChat"
       }
     ],
     "keybindings": [
@@ -127,6 +132,12 @@
         "key": "ctrl+alt+enter",
         "mac": "cmd+alt+enter",
         "when": "editorTextFocus && editorLangId == chat"
+      },
+      {
+        "command": "vschat.extractSelectionToBlock",
+        "key": "ctrl+alt+e",
+        "mac": "cmd+alt+e",
+        "when": "editorTextFocus && editorLangId == chat && editorHasSelection"
       }
     ],
     "menus": {
@@ -135,6 +146,13 @@
           "command": "vschat.sendCurrentContextRequest",
           "group": "navigation",
           "when": "editorLangId == chat"
+        }
+      ],
+      "editor/context": [
+        {
+          "command": "vschat.extractSelectionToBlock",
+          "group": "1_modification",
+          "when": "editorLangId == chat && editorHasSelection"
         }
       ]
     },
@@ -208,6 +226,86 @@
             }
           ],
           "description": "LLM providers configuration"
+        },
+        "vschat.textProcessing.rules": {
+          "type": "array",
+          "default": [],
+          "description": "文本处理规则配置",
+          "items": {
+            "type": "object",
+            "properties": {
+              "id": {
+                "type": "string",
+                "description": "规则的唯一标识"
+              },
+              "name": {
+                "type": "string",
+                "description": "规则名称"
+              },
+              "description": {
+                "type": "string",
+                "description": "规则描述"
+              },
+              "pattern": {
+                "type": "object",
+                "description": "匹配模式",
+                "properties": {
+                  "regex": {
+                    "type": "string",
+                    "description": "正则表达式"
+                  },
+                  "flags": {
+                    "type": "string",
+                    "description": "正则表达式标志，如 'g', 'i' 等"
+                  },
+                  "captureGroup": {
+                    "type": "number",
+                    "description": "捕获组索引"
+                  }
+                }
+              },
+              "processorType": {
+                "type": "string",
+                "enum": ["extract", "replace", "transform"],
+                "description": "处理类型"
+              },
+              "processor": {
+                "type": "object",
+                "description": "处理器配置",
+                "properties": {
+                  "extractToBlock": {
+                    "type": "object",
+                    "description": "提取内容到新块",
+                    "properties": {
+                      "blockType": {
+                        "type": "string",
+                        "enum": ["U", "A", "S", "N"],
+                        "description": "块类型"
+                      },
+                      "blockName": {
+                        "type": "string",
+                        "description": "块名称"
+                      },
+                      "removeFromSource": {
+                        "type": "boolean",
+                        "description": "是否从源文本中移除"
+                      }
+                    }
+                  },
+                  "replaceWith": {
+                    "type": "string",
+                    "description": "替换为指定字符串"
+                  }
+                }
+              }
+            },
+            "required": ["id", "name", "processorType", "processor"]
+          }
+        },
+        "vschat.textProcessing.defaultNoteBlockName": {
+          "type": "string",
+          "default": "注释",
+          "description": "提取内容到注释块时的默认名称"
         }
       }
     }
